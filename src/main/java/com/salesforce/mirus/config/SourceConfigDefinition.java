@@ -10,7 +10,12 @@ package com.salesforce.mirus.config;
 
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.connect.runtime.ConnectorConfig;
+import org.apache.kafka.connect.runtime.SinkConnectorConfig;
 
 /**
  * Properties listed here can be applied to the MirusSourceConnector configuration object, which is
@@ -19,7 +24,7 @@ import org.apache.kafka.common.config.ConfigDef;
  * information on the destination cluster for topic metadata validation.
  */
 public enum SourceConfigDefinition {
-  NAME("name", ConfigDef.Type.STRING, "", ConfigDef.Importance.HIGH, "Unique name for this source"),
+  NAME(ConnectorConfig.NAME_CONFIG, ConfigDef.Type.STRING, "", ConfigDef.Importance.HIGH, "Unique name for this source"),
   TOPICS_WHITELIST(
       "topics.whitelist",
       ConfigDef.Type.LIST,
@@ -27,7 +32,7 @@ public enum SourceConfigDefinition {
       ConfigDef.Importance.HIGH,
       "Whitelisted topic names will be mirrored. Comma-separated list."),
   TOPICS_REGEX(
-      "topics.regex",
+      SinkConnectorConfig.TOPICS_REGEX_CONFIG, // can use here, although this is a source connector
       ConfigDef.Type.STRING,
       "",
       ConfigDef.Importance.HIGH,
@@ -63,25 +68,25 @@ public enum SourceConfigDefinition {
       ConfigDef.Importance.MEDIUM,
       "Ensures records are written to the destination partition with the same identifier as the source partition"),
   SOURCE_KEY_CONVERTER(
-      "source.key.converter",
+      "source." + ConnectorConfig.KEY_CONVERTER_CLASS_CONFIG,
       ConfigDef.Type.CLASS,
       "org.apache.kafka.connect.converters.ByteArrayConverter",
       ConfigDef.Importance.MEDIUM,
       "Converter class to apply to source record keys"),
   SOURCE_VALUE_CONVERTER(
-      "source.value.converter",
+      "source." + ConnectorConfig.VALUE_CONVERTER_CLASS_CONFIG,
       ConfigDef.Type.CLASS,
       "org.apache.kafka.connect.converters.ByteArrayConverter",
       ConfigDef.Importance.MEDIUM,
       "Converter class to apply to source record values"),
   SOURCE_HEADER_CONVERTER(
-      "source.header.converter",
+      "source." + ConnectorConfig.HEADER_CONVERTER_CLASS_CONFIG,
       ConfigDef.Type.CLASS,
       "org.apache.kafka.connect.converters.ByteArrayConverter",
       ConfigDef.Importance.MEDIUM,
       "Converter class to apply to source record headers"),
   DESTINATION_BOOTSTRAP_SERVERS(
-      "destination.bootstrap.servers",
+      "destination." + CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
       ConfigDef.Type.STRING,
       "",
       ConfigDef.Importance.HIGH,

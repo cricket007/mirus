@@ -16,14 +16,18 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.connect.connector.ConnectorContext;
@@ -50,7 +54,9 @@ class KafkaMonitor implements Runnable {
   private final Pattern topicsRegexPattern;
   private final CountDownLatch shutDownLatch = new CountDownLatch(1);
   private final Consumer<byte[], byte[]> sourceConsumer;
+  private final AdminClient sourceAdminClient;
   private final Consumer<byte[], byte[]> destinationConsumer;
+  private final AdminClient destinationAdminClient;
   private final Long monitorPollWaitMs;
   private final TaskConfigBuilder taskConfigBuilder;
   private final SourcePartitionValidator.MatchingStrategy validationStrategy;
@@ -65,7 +71,9 @@ class KafkaMonitor implements Runnable {
         context,
         config,
         newSourceConsumer(config),
+        newSourceAdminClient(config),
         newDestinationConsumer(config),
+        newDestinationAdminClient(config),
         taskConfigBuilder);
   }
 
@@ -73,14 +81,18 @@ class KafkaMonitor implements Runnable {
       ConnectorContext context,
       SourceConfig config,
       Consumer<byte[], byte[]> sourceConsumer,
+      AdminClient sourceAdminClient,
       Consumer<byte[], byte[]> destinationConsumer,
+      AdminClient destinationAdminClient,
       TaskConfigBuilder taskConfigBuilder) {
     this.context = context;
     this.topicsWhitelist = config.getTopicsWhitelist();
     this.monitorPollWaitMs = config.getMonitorPollWaitMs();
     this.topicsRegexPattern = Pattern.compile(config.getTopicsRegex());
     this.sourceConsumer = sourceConsumer;
+    this.sourceAdminClient = sourceAdminClient;
     this.destinationConsumer = destinationConsumer;
+    this.destinationAdminClient = destinationAdminClient;
     if (topicsWhitelist.isEmpty() && config.getTopicsRegex().isEmpty()) {
       logger.warn("No whitelist configured");
     }
@@ -100,6 +112,18 @@ class KafkaMonitor implements Runnable {
     return new KafkaConsumer<>(consumerProperties);
   }
 
+  private static AdminClient newSourceAdminClient(SourceConfig config) {
+    Map<String, Object> adminProperties = config.getAdminProperties();
+
+    // The "admin-monitor1" client id suffix is used to keep JMX bean names distinct
+    adminProperties.computeIfPresent(
+            CommonClientConfigs.CLIENT_ID_CONFIG, (k, v) -> v + "admin-monitor1");
+    // Explicitly grab bootstrap servers from the consumer
+    adminProperties.put(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getSourceBootstrapServers());
+    return AdminClient.create(adminProperties);
+  }
+
   private static Consumer<byte[], byte[]> newDestinationConsumer(SourceConfig config) {
     Map<String, Object> consumerProperties = config.getConsumerProperties();
 
@@ -109,6 +133,18 @@ class KafkaMonitor implements Runnable {
     consumerProperties.put(
         ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getDestinationBootstrapServers());
     return new KafkaConsumer<>(consumerProperties);
+  }
+
+  private static AdminClient newDestinationAdminClient(SourceConfig config) {
+    Map<String, Object> adminProperties = config.getAdminProperties();
+
+    // The "admin-monitor2" client id suffix is used to keep JMX bean names distinct
+    adminProperties.computeIfPresent(
+            CommonClientConfigs.CLIENT_ID_CONFIG, (k, v) -> v + "admin-monitor2");
+    // Explicitly grab bootstrap servers from the destination producer
+    adminProperties.put(
+            ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getDestinationBootstrapServers());
+    return AdminClient.create(adminProperties);
   }
 
   @Override
@@ -190,12 +226,31 @@ class KafkaMonitor implements Runnable {
         .entrySet()
         .stream()
         .filter(
-            e ->
-                topicsWhitelist.contains(e.getKey())
-                    || topicsRegexPattern.matcher(e.getKey()).matches())
+            e -> {
+              String key = e.getKey();
+              return topicsWhitelist.contains(key) || topicsRegexPattern.matcher(key).matches();
+            })
         .flatMap(e -> e.getValue().stream())
         .map(partitionInfo -> new TopicPartition(partitionInfo.topic(), partitionInfo.partition()))
         .collect(Collectors.toList());
+  }
+
+  private List<ConfigEntry> fetchTopicConfigurations(AdminClient adminClient, String topic) {
+    List<ConfigEntry> dynamicTopicConfigs = new ArrayList<>();
+
+    ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+    try {
+      dynamicTopicConfigs = adminClient.describeConfigs(Collections.singletonList(resource))
+          .all()
+          .thenApply(configMap -> configMap.get(resource).entries()
+              .stream().filter(e -> e.source() == ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG)
+              .collect(Collectors.toList())
+          ).get();
+      } catch (InterruptedException | ExecutionException e) {
+        logger.error("Unable to get topic configurations for topic {}", topic);
+      }
+
+    return dynamicTopicConfigs;
   }
 
   private List<TopicPartition> fetchTopicPartitionList() {

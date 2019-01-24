@@ -10,6 +10,8 @@ package com.salesforce.mirus.config;
 
 import java.util.List;
 import java.util.Map;
+
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.connect.transforms.util.SimpleConfig;
 
 public class SourceConfig {
@@ -34,6 +36,14 @@ public class SourceConfig {
 
   public Map<String, Object> getConsumerProperties() {
     return simpleConfig.originalsWithPrefix("consumer.");
+  }
+
+  public Map<String, Object> getAdminProperties() {
+    return simpleConfig.originalsWithPrefix("admin.");
+  }
+
+  public String getSourceBootstrapServers() {
+    return simpleConfig.getString("consumer." + ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG);
   }
 
   public String getDestinationBootstrapServers() {

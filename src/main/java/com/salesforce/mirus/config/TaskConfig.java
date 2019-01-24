@@ -43,7 +43,7 @@ public class TaskConfig {
     properties
         .entrySet()
         .stream()
-        .filter(e -> taskKeys.contains(e.getKey()) || e.getKey().startsWith("consumer."))
+        .filter(e -> taskKeys.contains(e.getKey()) || e.getKey().startsWith("consumer.") || e.getKey().startsWith("admin."))
         .forEach(e -> result.put(e.getKey(), e.getValue()));
     return result;
   }

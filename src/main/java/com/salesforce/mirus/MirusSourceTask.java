@@ -9,6 +9,8 @@
 package com.salesforce.mirus;
 
 import com.salesforce.mirus.config.TaskConfig;
+
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -17,13 +19,16 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.connect.data.SchemaAndValue;
+import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.header.ConnectHeaders;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
@@ -145,15 +150,22 @@ public class MirusSourceTask extends SourceTask {
           // check if offset has been set to null, i.e. tombstone record
           // or if no offset record at all
           if (offsetMap == null || offsetMap.get(KEY_OFFSET) == null) {
-            // No offsets available so seek to start or end
+            // No offsets available so seek to start, end, or existing
             // (need to do this explicitly if manually seeking).
-            String offsetReset = (String) consumerProperties.get("auto.offset.reset");
-            if ("latest".equalsIgnoreCase(offsetReset)) {
+            String offsetReset = (String) consumerProperties.get(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG);
+            if (OffsetResetStrategy.LATEST.toString().equalsIgnoreCase(offsetReset)) {
               logger.trace("Seeking to end");
               consumer.seekToEnd(Collections.singletonList(tp));
-            } else {
+            } else if (OffsetResetStrategy.EARLIEST.toString().equalsIgnoreCase(offsetReset)) {
               logger.trace("Seeking to beginning");
               consumer.seekToBeginning(Collections.singletonList(tp));
+            } else if (OffsetResetStrategy.NONE.toString().equalsIgnoreCase(offsetReset)) {
+              logger.trace("Using existing consumer group offsets");
+              // long committedOffset = consumer.committed(tp).offset();
+              // consumer.seek(tp, committedOffset);
+            } else {
+              throw new ConnectException(String.format("Invalid setting '%s' for configuration %s", offsetReset,
+                      ConsumerConfig.AUTO_OFFSET_RESET_CONFIG));
             }
             if (logger.isTraceEnabled()) {
               long pos = consumer.position(tp);
@@ -170,13 +182,9 @@ public class MirusSourceTask extends SourceTask {
 
     try {
       logger.trace("Calling poll");
-      ConsumerRecords<byte[], byte[]> result = consumer.poll(consumerPollTimeoutMillis);
+      ConsumerRecords<byte[], byte[]> result = consumer.poll(Duration.ofMillis(consumerPollTimeoutMillis));
       logger.trace("Got {} records", result.count());
-      if (!result.isEmpty()) {
-        return sourceRecords(result);
-      } else {
-        return Collections.emptyList();
-      }
+      return result.isEmpty() ? Collections.emptyList() : sourceRecords(result);
     } catch (WakeupException e) {
       // Ignore exception iff shutting down thread.
       if (!shutDown.get()) throw e;

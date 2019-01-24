@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 
@@ -59,7 +61,7 @@ class TaskConfigBuilder {
   private Map<String, String> makeClientIdUnique(Map<String, String> taskConfig, int taskCounter) {
     String clientId = taskConfig.get(TaskConfigDefinition.CONSUMER_CLIENT_ID);
     if (clientId == null) {
-      throw new ConfigException("consumer.client.id must be set");
+      throw new ConfigException("consumer." + ConsumerConfig.CLIENT_ID_CONFIG + " must be set");
     }
     // Build a task id similar to the one used by Worker.
     String taskId = sourceName + "-" + taskCounter;

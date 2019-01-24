@@ -26,6 +26,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.PartitionInfo;
@@ -55,7 +57,9 @@ public class KafkaMonitorTest {
             mock(ConnectorContext.class),
             config,
             mockSourceConsumer,
+            mock(AdminClient.class),
             mockDestinationConsumer,
+            mock(AdminClient.class),
             taskConfigBuilder);
   }
 

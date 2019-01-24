@@ -10,12 +10,14 @@ package com.salesforce.mirus.config;
 
 import java.util.Arrays;
 import java.util.List;
+
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.config.ConfigDef;
 
 public class TaskConfigDefinition {
 
   public static final String PARTITION_LIST = "partitions";
-  public static final String CONSUMER_CLIENT_ID = "consumer.client.id";
+  public static final String CONSUMER_CLIENT_ID = "consumer." + ConsumerConfig.CLIENT_ID_CONFIG;
   /** List of config definitions to inherit from SourceConfig */
   private static final List<SourceConfigDefinition> SOURCE_CONFIG_DEFINITION_LIST =
       Arrays.asList(
